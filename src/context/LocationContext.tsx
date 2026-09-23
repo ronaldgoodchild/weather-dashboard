@@ -17,13 +17,13 @@ export interface LocationCtx {
 }
 
 export const DEFAULT_LOCATION: UserLocation = {
-  zip: '32257',
-  lat: 30.1927,
-  lon: -81.6050,
+  zip: '32202',
+  lat: 30.3322,
+  lon: -81.6557,
   city: 'Jacksonville',
   state: 'FL',
   nwsZone: 'FLZ325,FLC031',
-  label: 'Jacksonville, FL 32257',
+  label: 'Jacksonville, FL 32202',
 };
 
 export const LocationContext = createContext<LocationCtx>({

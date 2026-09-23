@@ -8,7 +8,7 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (saved) {
         const parsed = JSON.parse(saved);
         // Drop stale cache if zones are in old single-zone format
-        if (parsed.zip === '32257' && !parsed.nwsZone?.includes(',')) {
+        if (parsed.nwsZone === 'FLZ325') {
           localStorage.removeItem('weatherDashLocation');
           return DEFAULT_LOCATION;
         }
