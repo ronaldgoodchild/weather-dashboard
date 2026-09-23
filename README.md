@@ -4,6 +4,14 @@ A free, **single-file weather dashboard** built with React, TypeScript, Vite and
 
 > Not affiliated with NOAA or the National Weather Service. Always follow official warnings.
 
+## Screenshots
+
+![Overview: live alerts, radar and regional conditions](docs/screenshots/overview.png)
+*Overview: live alerts, radar and regional conditions*
+
+![7-day forecast from the National Weather Service](docs/screenshots/forecast.png)
+*7-day forecast from the National Weather Service*
+
 ## Features
 
 - **Overview** - current conditions at a glance for your ZIP code

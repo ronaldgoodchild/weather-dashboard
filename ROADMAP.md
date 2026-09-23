@@ -3,7 +3,7 @@
 Comment on (or open) an issue first so we don't duplicate work.
 
 ## Good first issues
-- [ ] Add screenshots of each panel to the README
+- [x] Add screenshots of each panel to the README
 - [ ] Make the Cameras panel configurable (a JSON list of camera links per region)
 - [ ] Add a unit-test setup (Vitest) and tests for the ZIP / NWS-zone lookup helpers
 - [ ] Add a dark/light theme toggle and a metric/imperial units switch
