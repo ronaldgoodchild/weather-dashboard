@@ -1,0 +1,60 @@
+# Copy this file to .github/workflows/weather-alerts.yml in YOUR OWN fork and add the NTFY_TOPIC secret.
+name: NWS Weather Alert Monitor
+
+# Runs every 5 minutes, 24/7, completely free on GitHub Actions
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:   # lets you trigger it manually from GitHub UI
+
+jobs:
+  check-alerts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check NWS alerts and notify via ntfy.sh
+        env:
+          NTFY_TOPIC:    ${{ secrets.NTFY_TOPIC }}     # set in GitHub → Settings → Secrets
+          NWS_ZONES:     'FLZ325,FLC031'               # Jacksonville area zones
+          LOCATION:      'Jacksonville, FL'
+        run: |
+          node << 'EOF'
+          const zones    = process.env.NWS_ZONES;
+          const topic    = process.env.NTFY_TOPIC;
+          const location = process.env.LOCATION;
+
+          const PRIORITY = { Extreme:'urgent', Severe:'high', Moderate:'default', Minor:'low', Unknown:'min' };
+          const TAGS     = { Extreme:'rotating_light,warning', Severe:'warning', Moderate:'cloud_with_lightning', Minor:'information_source', Unknown:'information_source' };
+
+          async function run() {
+            const res  = await fetch(`https://api.weather.gov/alerts/active?zone=${zones}`,
+              { headers: { 'User-Agent': 'WeatherDashboard-GHActions/1.0 (https://github.com/ronaldgoodchild/weather-dashboard)' } });
+            const data = await res.json();
+            const alerts = (data.features ?? []).filter(a => a.properties?.status !== 'Test');
+
+            // GitHub Actions cache: store seen IDs between runs
+            // We use the workflow run number as a poor-man dedup:
+            // Only send alerts effective in the last 6 minutes
+            const cutoff = Date.now() - 6 * 60 * 1000;
+
+            for (const alert of alerts) {
+              const p = alert.properties;
+              const effective = p.effective ? new Date(p.effective).getTime() : 0;
+              if (effective < cutoff) continue;  // older than last check window, skip
+
+              const severity = p.severity ?? 'Unknown';
+              const title    = encodeURIComponent(`⚠️ ${p.event} — ${location}`);
+              const priority = PRIORITY[severity] ?? 'default';
+              const tags     = TAGS[severity]     ?? 'warning';
+              const expires  = p.expires ? new Date(p.expires).toLocaleString('en-US',{timeZone:'America/New_York'}) : 'unknown';
+              const body     = `${p.headline ?? p.event}\n\nArea: ${p.areaDesc ?? '—'}\nExpires: ${expires}`;
+
+              const r = await fetch(`https://ntfy.sh/${topic}?title=${title}&priority=${priority}&tags=${tags}`,
+                { method:'POST', body });
+              console.log(`${r.ok ? '✅' : '❌'} ${p.event} (${severity}) → ntfy ${r.status}`);
+            }
+
+            if (alerts.length === 0) console.log('ℹ️ No active alerts');
+          }
+
+          run().catch(e => { console.error(e); process.exit(1); });
+          EOF

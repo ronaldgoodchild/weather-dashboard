@@ -1,0 +1,6 @@
+node_modules/
+dist/
+*.zip
+seen-alerts.json
+.env
+*.log
