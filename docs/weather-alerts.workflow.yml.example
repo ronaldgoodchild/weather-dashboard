@@ -14,20 +14,27 @@ jobs:
       - name: Check NWS alerts and notify via ntfy.sh
         env:
           NTFY_TOPIC:    ${{ secrets.NTFY_TOPIC }}     # set in GitHub → Settings → Secrets
-          NWS_ZONES:     'FLZ325,FLC031'               # Jacksonville area zones
-          LOCATION:      'Jacksonville, FL'
+          WX_ZIP:        '90210'                       # <- the U.S. ZIP code to watch
         run: |
           node << 'EOF'
-          const zones    = process.env.NWS_ZONES;
+          const zip      = process.env.WX_ZIP;
           const topic    = process.env.NTFY_TOPIC;
-          const location = process.env.LOCATION;
+          const UA       = { 'User-Agent': 'WeatherDashboard-GHActions/1.0 (https://github.com/ronaldgoodchild/weather-dashboard)' };
 
           const PRIORITY = { Extreme:'urgent', Severe:'high', Moderate:'default', Minor:'low', Unknown:'min' };
           const TAGS     = { Extreme:'rotating_light,warning', Severe:'warning', Moderate:'cloud_with_lightning', Minor:'information_source', Unknown:'information_source' };
 
           async function run() {
-            const res  = await fetch(`https://api.weather.gov/alerts/active?zone=${zones}`,
-              { headers: { 'User-Agent': 'WeatherDashboard-GHActions/1.0 (https://github.com/ronaldgoodchild/weather-dashboard)' } });
+            // ZIP -> coordinates -> NWS alert zones (forecast + county + fire weather)
+            const place = (await (await fetch(`https://api.zippopotam.us/us/${zip}`)).json()).places?.[0];
+            if (!place) throw new Error(`ZIP ${zip} not found`);
+            const lat = parseFloat(place.latitude), lon = parseFloat(place.longitude);
+            const pt = (await (await fetch(`https://api.weather.gov/points/${lat.toFixed(4)},${lon.toFixed(4)}`, { headers: UA })).json()).properties;
+            const zones = [...new Set([pt.forecastZone, pt.county, pt.fireWeatherZone].filter(Boolean).map(u => u.split('/').pop()))].join(',');
+            const location = `${place['place name']}, ${place['state abbreviation']} ${zip}`;
+            const tz = pt.timeZone || 'America/New_York';
+
+            const res  = await fetch(`https://api.weather.gov/alerts/active?zone=${zones}`, { headers: UA });
             const data = await res.json();
             const alerts = (data.features ?? []).filter(a => a.properties?.status !== 'Test');
 
@@ -45,7 +52,7 @@ jobs:
               const title    = encodeURIComponent(`⚠️ ${p.event} — ${location}`);
               const priority = PRIORITY[severity] ?? 'default';
               const tags     = TAGS[severity]     ?? 'warning';
-              const expires  = p.expires ? new Date(p.expires).toLocaleString('en-US',{timeZone:'America/New_York'}) : 'unknown';
+              const expires  = p.expires ? new Date(p.expires).toLocaleString('en-US',{timeZone:tz}) : 'unknown';
               const body     = `${p.headline ?? p.event}\n\nArea: ${p.areaDesc ?? '—'}\nExpires: ${expires}`;
 
               const r = await fetch(`https://ntfy.sh/${topic}?title=${title}&priority=${priority}&tags=${tags}`,
