@@ -104,6 +104,20 @@ async function nearbyPlaces(lat: number, lon: number, homeCity: string) {
   return out;
 }
 
+// One transient failure (rate limit, network blip) shouldn't blank a reading: retry twice.
+async function fetchConditionsRetry(lat: number, lon: number) {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await fetchConditions(lat, lon);
+    } catch (e) {
+      lastErr = e;
+      await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 const REFRESH_SECS = 15 * 60; // 15 min
 
 const Overview: React.FC = () => {
@@ -124,7 +138,7 @@ const Overview: React.FC = () => {
     ];
 
     const results = await Promise.allSettled(
-      points.map(p => fetchConditions(p.lat, p.lon))
+      points.map(p => fetchConditionsRetry(p.lat, p.lon))
     );
 
     setStations(
