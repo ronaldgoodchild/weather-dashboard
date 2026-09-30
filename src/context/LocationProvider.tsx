@@ -1,28 +1,38 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { LocationContext, DEFAULT_LOCATION, UserLocation } from './LocationContext';
+import { fetchNwsPoint } from '../utils/geo';
+
+const STORAGE_KEY = 'weatherDashLocation';
+
+function loadInitial(): UserLocation {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Drop stale cache if zones are in old single-zone format
+      if (parsed.nwsZone === 'FLZ325') {
+        localStorage.removeItem(STORAGE_KEY);
+        return DEFAULT_LOCATION;
+      }
+      return parsed;
+    }
+  } catch { /* fall through */ }
+  return DEFAULT_LOCATION;
+}
 
 export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [location, setLocation] = useState<UserLocation>(() => {
-    try {
-      const saved = localStorage.getItem('weatherDashLocation');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        // Drop stale cache if zones are in old single-zone format
-        if (parsed.nwsZone === 'FLZ325') {
-          localStorage.removeItem('weatherDashLocation');
-          return DEFAULT_LOCATION;
-        }
-        return parsed;
-      }
-      return DEFAULT_LOCATION;
-    } catch {
-      return DEFAULT_LOCATION;
-    }
-  });
-
+  const [location, setLocation] = useState<UserLocation>(loadInitial);
   const [loading, setLoading] = useState(false);
+  const locRef = useRef(location);
+  locRef.current = location;
 
-  const updateZip = useCallback(async (zip: string): Promise<string | null> => {
+  const save = (loc: UserLocation) => {
+    setLocation(loc);
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(loc)); } catch { /* storage blocked */ }
+  };
+
+  const updateZip = useCallback(async (zipRaw: string): Promise<string | null> => {
+    const zip = zipRaw.trim();
     if (!/^\d{5}$/.test(zip)) return 'Please enter a valid 5-digit ZIP code.';
     setLoading(true);
     try {
@@ -37,30 +47,21 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const city = place['place name'];
       const state = place['state abbreviation'];
 
-      // Get all three NWS zone types so we catch heat, flood, and severe wx alerts
-      let nwsZone = 'FLZ325,FLC031';
-      try {
-        const nwsRes = await fetch(
-          `https://api.weather.gov/points/${lat.toFixed(4)},${lon.toFixed(4)}`,
-          { headers: { 'User-Agent': 'WeatherDashboard/1.0' } }
-        );
-        if (nwsRes.ok) {
-          const nwsData = await nwsRes.json();
-          const props = nwsData.properties ?? {};
-          const zones = [props.forecastZone, props.county, props.fireWeatherZone]
-            .filter(Boolean)
-            .map((u: string) => u.split('/').pop())
-            .filter(Boolean);
-          if (zones.length > 0) nwsZone = zones.join(',');
-        }
-      } catch { /* keep fallback */ }
+      // NWS point: forecast office, radar, and all three zone types (forecast, county,
+      // fire weather) so heat, flood and severe-weather alerts are all caught.
+      const pt = await fetchNwsPoint(lat, lon);
+      if (!pt) {
+        return 'The National Weather Service has no data for that ZIP code (US locations only). Try another.';
+      }
 
-      const newLoc: UserLocation = {
-        zip, lat, lon, city, state, nwsZone,
+      save({
+        zip, lat, lon, city, state,
+        nwsZone: pt.zones.length ? pt.zones.join(',') : '',
         label: `${city}, ${state} ${zip}`,
-      };
-      setLocation(newLoc);
-      localStorage.setItem('weatherDashLocation', JSON.stringify(newLoc));
+        office: pt.office,
+        radarStation: pt.radarStation,
+        timeZone: pt.timeZone,
+      });
       return null;
     } catch (e: any) {
       return e.message ?? 'Failed to look up ZIP code.';
@@ -68,6 +69,29 @@ export const LocationProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setLoading(false);
     }
   }, []);
+
+  // Older saved locations (and the built-in default) may lack the NWS office / radar
+  // fields: fill them in once so every tab can follow the ZIP.
+  useEffect(() => {
+    const loc = locRef.current;
+    if (loc.office && loc.radarStation) return;
+    fetchNwsPoint(loc.lat, loc.lon).then(pt => {
+      if (!pt || locRef.current.zip !== loc.zip) return;
+      save({
+        ...locRef.current,
+        office: pt.office,
+        radarStation: pt.radarStation,
+        timeZone: pt.timeZone,
+        nwsZone: locRef.current.nwsZone || pt.zones.join(','),
+      });
+    });
+  }, []); // eslint-disable-line
+
+  // Shareable links: https://…/weather/?zip=90210
+  useEffect(() => {
+    const z = new URLSearchParams(window.location.search).get('zip');
+    if (z && /^\d{5}$/.test(z) && z !== locRef.current.zip) updateZip(z);
+  }, [updateZip]);
 
   return (
     <LocationContext.Provider value={{ location, updateZip, loading }}>

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation } from '../context/LocationContext';
+import { distanceMiles } from '../utils/geo';
 
 // ── Station data with real working stream URLs (wxradio.org SSL streams) ──────
 
@@ -9,6 +10,7 @@ interface NWRStation {
   freq: string;
   city: string;
   streamUrl: string; // Live NOAA Weather Radio internet relay
+  miles?: number;    // distance from the chosen ZIP
 }
 
 // Florida stations — wxradio.org provides SSL audio relays of NWR 162 MHz
@@ -70,17 +72,30 @@ const STATE_STATIONS: Record<string, NWRStation[]> = {
   ],
 };
 
-// Fallback if state not in map
-const FALLBACK_STATION: NWRStation = {
-  name: 'NE Florida (Jacksonville area)',
-  callSign: 'WNG522',
-  freq: '162.425',
-  city: 'Palatka → NE FL',
-  streamUrl: 'https://wxradio.org/FL-Palatka-WNG522',
+// Approximate transmitter-city coordinates, used to offer the relays nearest the chosen ZIP.
+const STATION_COORDS: Record<string, [number, number]> = {
+  WNG522: [29.65, -81.64], KIH63: [28.54, -81.38], KHB32: [27.95, -82.46], KIH24: [30.44, -84.28],
+  WXK83: [26.64, -81.87], KPS505: [28.72, -82.06], WXL57: [33.75, -84.39], WXK72: [32.08, -81.09],
+  WXK99: [32.78, -79.93], WXK98: [34.00, -81.03], WXL58: [35.23, -80.84], KEC88: [35.78, -78.64],
+  KHB35: [29.76, -95.37], WXL44: [32.78, -96.80], WNG645: [33.52, -86.80], KEC72: [30.69, -88.04],
+  KHB36: [36.85, -76.29], KHB66: [37.54, -77.44], KWO35: [40.71, -74.01], WXL52: [42.65, -73.76],
+  KHB69: [34.05, -118.24], KIG72: [37.77, -122.42], KEC68: [41.88, -87.63], KEC67: [39.96, -83.00],
+  KWO39: [39.95, -75.17], KPF78: [40.44, -80.00],
 };
 
-function getStations(state: string): NWRStation[] {
-  return STATE_STATIONS[state] ?? [FALLBACK_STATION];
+const ALL_STATIONS: NWRStation[] = Object.values(STATE_STATIONS).flat();
+
+// Every known relay, nearest first, with its distance from the chosen ZIP.
+function getStations(lat: number, lon: number): NWRStation[] {
+  return ALL_STATIONS
+    .filter(st => STATION_COORDS[st.callSign])
+    .map(st => {
+      const [la, lo] = STATION_COORDS[st.callSign];
+      return { st, miles: distanceMiles(lat, lon, la, lo) };
+    })
+    .sort((x, y) => x.miles - y.miles)
+    .slice(0, 6)
+    .map(({ st, miles }) => ({ ...st, city: `${st.city} · ${Math.round(miles)} mi`, miles }));
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -100,14 +115,14 @@ const NWRPlayer: React.FC = () => {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const stations = getStations(location.state);
+  const stations = React.useMemo(() => getStations(location.lat, location.lon), [location.lat, location.lon]);
   const station  = stations[Math.min(selectedIdx, stations.length - 1)];
 
   // When location state changes, reset to first station and stop audio
   useEffect(() => {
     setSelectedIdx(0);
     stopAudio();
-  }, [location.state]); // eslint-disable-line
+  }, [location.zip]); // eslint-disable-line
 
   // Keep volume in sync
   useEffect(() => {
@@ -244,8 +259,15 @@ const NWRPlayer: React.FC = () => {
           {/* Station picker */}
           <div className="px-4 pt-3 pb-2">
             <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2 font-semibold">
-              {location.state} Stations
+              Nearest stations to {location.label}
             </div>
+            {(stations[0]?.miles ?? 0) > 100 && (
+              <div className="text-[10px] text-amber-400/90 mb-2 leading-snug">
+                The closest relay in this list is about {Math.round(stations[0].miles ?? 0)} miles away. Find the NOAA Weather Radio
+                transmitter for your exact area at{' '}
+                <a href="https://www.weather.gov/nwr/" target="_blank" rel="noopener noreferrer" className="underline">weather.gov/nwr</a>.
+              </div>
+            )}
             <div className="flex flex-col gap-1">
               {stations.map((s, i) => (
                 <button

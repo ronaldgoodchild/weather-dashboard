@@ -8,6 +8,11 @@ export interface UserLocation {
   state: string;
   nwsZone: string;
   label: string;
+  /** NWS forecast office id for this point, e.g. "JAX" */
+  office?: string;
+  /** Nearest NWS radar station id, e.g. "KJAX" */
+  radarStation?: string;
+  timeZone?: string;
 }
 
 export interface LocationCtx {
@@ -24,6 +29,9 @@ export const DEFAULT_LOCATION: UserLocation = {
   state: 'FL',
   nwsZone: 'FLZ325,FLC031',
   label: 'Jacksonville, FL 32202',
+  office: 'JAX',
+  radarStation: 'KJAX',
+  timeZone: 'America/New_York',
 };
 
 export const LocationContext = createContext<LocationCtx>({
