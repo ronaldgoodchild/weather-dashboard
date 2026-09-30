@@ -22,7 +22,7 @@ Type any U.S. ZIP code and **every tab follows it** (or open `?zip=90210` for a 
 - **Hurricane** - National Hurricane Center products, the basin closest to you, and your local NWS office's Hurricane Local Statement
 - **Tides** - NOAA Tides & Currents predictions for the three tide stations nearest your ZIP (with a note when the coast is far away)
 - **Cameras** - traffic camera links for your state, beach maps, your nearest NWS radar station and the GOES satellite sector for your region
-- **NOAA Weather Radio** player listing the relays nearest your ZIP
+- **NOAA Weather Radio** player: reads the live list of relay streams from wxradio.org and offers the ones nearest your ZIP (if a transmitter's main stream is down it tries its backup)
 - **Push notifications** through ntfy.sh for new alerts (browser-side, or run the included monitor script)
 - Builds to **one self-contained `index.html`** you can host anywhere or open from disk
 

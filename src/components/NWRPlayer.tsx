@@ -1,101 +1,82 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLocation } from '../context/LocationContext';
 import { distanceMiles } from '../utils/geo';
+import coords from '../data/nwrCoords.json';
 
-// ── Station data with real working stream URLs (wxradio.org SSL streams) ──────
+// ── Station catalog ───────────────────────────────────────────────────────────
+// wxradio.org (a service of noaaweatherradio.org) relays NOAA Weather Radio as SSL audio
+// streams. Its server publishes the list of streams that are live right now; we read that
+// list in the browser and keep the ones nearest the chosen ZIP. Stream names look like
+// "FL-Palatka-WNG522" (state-city-callsign). The table in data/nwrCoords.json maps each
+// city to coordinates so stations can be ranked by distance.
 
 interface NWRStation {
   name: string;
   callSign: string;
-  freq: string;
-  city: string;
-  streamUrl: string; // Live NOAA Weather Radio internet relay
-  miles?: number;    // distance from the chosen ZIP
+  freq: string;       // not published by the stream list; left blank
+  city: string;       // shown under the name, e.g. "34 mi away"
+  streamUrl: string;  // live internet relay
+  altUrls?: string[]; // backup relays for the same transmitter
+  miles?: number;     // distance from the chosen ZIP
 }
 
-// Florida stations — wxradio.org provides SSL audio relays of NWR 162 MHz
-// Palatka (WNG522) is the NWR transmitter that covers NE Florida / Jacksonville area
-const FL_STATIONS: NWRStation[] = [
-  { name: 'NE Florida (Jacksonville area)', callSign: 'WNG522', freq: '162.425', city: 'Palatka → NE FL',     streamUrl: 'https://wxradio.org/FL-Palatka-WNG522'       },
-  { name: 'Orlando',                         callSign: 'KIH63',  freq: '162.475', city: 'Orlando, FL',         streamUrl: 'https://wxradio.org/FL-Orlando-KIH63'         },
-  { name: 'Tampa Bay',                       callSign: 'KHB32',  freq: '162.550', city: 'Tampa Bay, FL',       streamUrl: 'https://wxradio.org/FL-TampaBay-KHB32'        },
-  { name: 'Tallahassee',                     callSign: 'KIH24',  freq: '162.400', city: 'Tallahassee, FL',     streamUrl: 'https://wxradio.org/FL-Tallahassee-KIH24'     },
-  { name: 'Fort Myers / Cape Coral',         callSign: 'WXK83',  freq: '162.400', city: 'Cape Coral, FL',      streamUrl: 'https://wxradio.org/FL-FortMyers-WXK83'       },
-  { name: 'Sumterville (Central FL)',        callSign: 'KPS505', freq: '162.500', city: 'Sumterville, FL',     streamUrl: 'https://wxradio.org/FL-Sumterville-KPS505'    },
+const COORDS = coords as unknown as Record<string, [number, number, string, string]>;
+const STREAM_BASE = 'https://wxradio.org/';
+const CATALOG_URL = 'https://wxradio.org/status-json.xsl';
+
+// Used only if the live list can't be fetched: streams confirmed to be working.
+const VERIFIED_MOUNTS = [
+  'FL-Palatka-WNG522', 'FL-Orlando-KIH63', 'FL-TampaBay-KHB32', 'FL-Tallahassee-KIH24', 'NY-NewYorkCity-KWO35',
 ];
 
-// Other states — wxradio.org pattern: https://wxradio.org/[STATE]-[City]-[CallSign]
-// Only listing verified states; others fall back to FL Jacksonville stream
-const STATE_STATIONS: Record<string, NWRStation[]> = {
-  FL: FL_STATIONS,
-  GA: [
-    { name: 'Atlanta',    callSign: 'WXL57', freq: '162.550', city: 'Atlanta, GA',      streamUrl: 'https://wxradio.org/GA-Atlanta-WXL57'    },
-    { name: 'Savannah',   callSign: 'WXK72', freq: '162.400', city: 'Savannah, GA',     streamUrl: 'https://wxradio.org/GA-Savannah-WXK72'   },
-  ],
-  SC: [
-    { name: 'Charleston', callSign: 'WXK99', freq: '162.400', city: 'Charleston, SC',   streamUrl: 'https://wxradio.org/SC-Charleston-WXK99' },
-    { name: 'Columbia',   callSign: 'WXK98', freq: '162.550', city: 'Columbia, SC',     streamUrl: 'https://wxradio.org/SC-Columbia-WXK98'   },
-  ],
-  NC: [
-    { name: 'Charlotte',  callSign: 'WXL58', freq: '162.400', city: 'Charlotte, NC',    streamUrl: 'https://wxradio.org/NC-Charlotte-WXL58'  },
-    { name: 'Raleigh',    callSign: 'KEC88', freq: '162.400', city: 'Raleigh, NC',      streamUrl: 'https://wxradio.org/NC-Raleigh-KEC88'    },
-  ],
-  TX: [
-    { name: 'Houston',    callSign: 'KHB35', freq: '162.400', city: 'Houston, TX',      streamUrl: 'https://wxradio.org/TX-Houston-KHB35'    },
-    { name: 'Dallas',     callSign: 'WXL44', freq: '162.400', city: 'Dallas, TX',       streamUrl: 'https://wxradio.org/TX-Dallas-WXL44'     },
-  ],
-  AL: [
-    { name: 'Birmingham', callSign: 'WNG645',freq: '162.550', city: 'Birmingham, AL',   streamUrl: 'https://wxradio.org/AL-Birmingham-WNG645'},
-    { name: 'Mobile',     callSign: 'KEC72', freq: '162.400', city: 'Mobile, AL',       streamUrl: 'https://wxradio.org/AL-Mobile-KEC72'     },
-  ],
-  VA: [
-    { name: 'Norfolk',    callSign: 'KHB36', freq: '162.550', city: 'Norfolk, VA',      streamUrl: 'https://wxradio.org/VA-Norfolk-KHB36'    },
-    { name: 'Richmond',   callSign: 'KHB66', freq: '162.475', city: 'Richmond, VA',     streamUrl: 'https://wxradio.org/VA-Richmond-KHB66'   },
-  ],
-  NY: [
-    { name: 'New York City',callSign:'KWO35',freq: '162.550', city: 'New York, NY',     streamUrl: 'https://wxradio.org/NY-NewYorkCity-KWO35'},
-    { name: 'Albany',     callSign: 'WXL52', freq: '162.400', city: 'Albany, NY',       streamUrl: 'https://wxradio.org/NY-Albany-WXL52'     },
-  ],
-  CA: [
-    { name: 'Los Angeles',callSign: 'KHB69', freq: '162.400', city: 'Los Angeles, CA',  streamUrl: 'https://wxradio.org/CA-LosAngeles-KHB69' },
-    { name: 'San Francisco',callSign:'KIG72',freq: '162.400', city: 'San Francisco, CA',streamUrl: 'https://wxradio.org/CA-SanFrancisco-KIG72'},
-  ],
-  IL: [
-    { name: 'Chicago',    callSign: 'KEC68', freq: '162.550', city: 'Chicago, IL',      streamUrl: 'https://wxradio.org/IL-Chicago-KEC68'    },
-  ],
-  OH: [
-    { name: 'Columbus',   callSign: 'KEC67', freq: '162.550', city: 'Columbus, OH',     streamUrl: 'https://wxradio.org/OH-Columbus-KEC67'   },
-  ],
-  PA: [
-    { name: 'Philadelphia',callSign:'KWO39',freq: '162.475', city: 'Philadelphia, PA',  streamUrl: 'https://wxradio.org/PA-Philadelphia-KWO39'},
-    { name: 'Pittsburgh', callSign: 'KPF78', freq: '162.400', city: 'Pittsburgh, PA',   streamUrl: 'https://wxradio.org/PA-Pittsburgh-KPF78' },
-  ],
-};
+let catalogCache: { at: number; mounts: string[] } | null = null;
 
-// Approximate transmitter-city coordinates, used to offer the relays nearest the chosen ZIP.
-const STATION_COORDS: Record<string, [number, number]> = {
-  WNG522: [29.65, -81.64], KIH63: [28.54, -81.38], KHB32: [27.95, -82.46], KIH24: [30.44, -84.28],
-  WXK83: [26.64, -81.87], KPS505: [28.72, -82.06], WXL57: [33.75, -84.39], WXK72: [32.08, -81.09],
-  WXK99: [32.78, -79.93], WXK98: [34.00, -81.03], WXL58: [35.23, -80.84], KEC88: [35.78, -78.64],
-  KHB35: [29.76, -95.37], WXL44: [32.78, -96.80], WNG645: [33.52, -86.80], KEC72: [30.69, -88.04],
-  KHB36: [36.85, -76.29], KHB66: [37.54, -77.44], KWO35: [40.71, -74.01], WXL52: [42.65, -73.76],
-  KHB69: [34.05, -118.24], KIG72: [37.77, -122.42], KEC68: [41.88, -87.63], KEC67: [39.96, -83.00],
-  KWO39: [39.95, -75.17], KPF78: [40.44, -80.00],
-};
+async function liveMounts(): Promise<string[]> {
+  if (catalogCache && Date.now() - catalogCache.at < 10 * 60 * 1000) return catalogCache.mounts;
+  try {
+    const res = await fetch(CATALOG_URL);
+    if (!res.ok) throw new Error(`catalog ${res.status}`);
+    const data = await res.json();
+    let src = data?.icestats?.source ?? [];
+    if (!Array.isArray(src)) src = [src];
+    const mounts: string[] = src
+      .map((x: any) => String(x?.listenurl ?? '').split('/').pop() ?? '')
+      .filter(Boolean);
+    if (!mounts.length) throw new Error('empty catalog');
+    catalogCache = { at: Date.now(), mounts };
+    return mounts;
+  } catch {
+    return VERIFIED_MOUNTS;
+  }
+}
 
-const ALL_STATIONS: NWRStation[] = Object.values(STATE_STATIONS).flat();
-
-// Every known relay, nearest first, with its distance from the chosen ZIP.
-function getStations(lat: number, lon: number): NWRStation[] {
-  return ALL_STATIONS
-    .filter(st => STATION_COORDS[st.callSign])
-    .map(st => {
-      const [la, lo] = STATION_COORDS[st.callSign];
-      return { st, miles: distanceMiles(lat, lon, la, lo) };
+// Nearest live relays, closest first, with their distance from the chosen ZIP.
+function buildStations(mounts: string[], lat: number, lon: number): NWRStation[] {
+  const groups = new Map<string, string[]>();
+  for (const m of mounts) {
+    const base = m.replace(/-alt\d*$/, '');
+    groups.set(base, [...(groups.get(base) ?? []), m]);
+  }
+  return [...groups.entries()]
+    .filter(([base]) => COORDS[base])
+    .map(([base, ms]) => {
+      const [la, lo, place, st] = COORDS[base];
+      const parts = base.split('-');
+      const callSign = parts[parts.length - 1];
+      const miles = distanceMiles(lat, lon, la, lo);
+      const primary = ms.find(x => x === base) ?? ms[0];
+      return {
+        name: st ? `${place}, ${st}` : place,
+        callSign,
+        freq: '',
+        city: `${Math.round(miles)} mi away`,
+        streamUrl: STREAM_BASE + primary,
+        altUrls: ms.filter(x => x !== primary).map(x => STREAM_BASE + x),
+        miles,
+      } as NWRStation;
     })
-    .sort((x, y) => x.miles - y.miles)
-    .slice(0, 6)
-    .map(({ st, miles }) => ({ ...st, city: `${st.city} · ${Math.round(miles)} mi`, miles }));
+    .sort((x, y) => (x.miles ?? 0) - (y.miles ?? 0))
+    .slice(0, 6);
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -115,8 +96,20 @@ const NWRPlayer: React.FC = () => {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const stations = React.useMemo(() => getStations(location.lat, location.lon), [location.lat, location.lon]);
-  const station  = stations[Math.min(selectedIdx, stations.length - 1)];
+  const [catalog, setCatalog] = useState<string[] | null>(null);
+  const altTry = useRef(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    liveMounts().then(m => { if (!cancelled) setCatalog(m); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const stations = React.useMemo(
+    () => (catalog ? buildStations(catalog, location.lat, location.lon) : []),
+    [catalog, location.lat, location.lon]
+  );
+  const station: NWRStation | undefined = stations[Math.min(selectedIdx, stations.length - 1)];
 
   // When location state changes, reset to first station and stop audio
   useEffect(() => {
@@ -152,9 +145,11 @@ const NWRPlayer: React.FC = () => {
     }
 
     // Fresh start / retry
+    if (!station) return;
     if (!audioRef.current) audioRef.current = new Audio();
     const audio = audioRef.current;
 
+    altTry.current = 0;
     audio.src = station.streamUrl;
     audio.volume = volume;
 
@@ -162,8 +157,16 @@ const NWRPlayer: React.FC = () => {
     audio.onplaying  = () => { setPlayState('playing'); setErrMsg(''); };
     audio.onpause    = () => { if (audio.src) setPlayState('paused'); };
     audio.onerror    = () => {
+      // try this transmitter's backup relay (if it has one) before giving up
+      const alt = station.altUrls?.[altTry.current];
+      if (alt) {
+        altTry.current += 1;
+        audio.src = alt;
+        audio.play().catch(() => {});
+        return;
+      }
       setPlayState('error');
-      setErrMsg('Stream unavailable — try a different station or check your connection.');
+      setErrMsg('This stream is offline right now — try another station.');
     };
     audio.onended = () => setPlayState('idle');
     audio.onstalled = () => setPlayState('loading');
@@ -174,7 +177,7 @@ const NWRPlayer: React.FC = () => {
       setPlayState('error');
       setErrMsg(e?.message ?? 'Playback blocked by browser — click play to retry.');
     });
-  }, [playState, station.streamUrl, volume]);
+  }, [playState, station, volume]);
 
   const handleStation = (idx: number) => {
     stopAudio();
@@ -268,6 +271,15 @@ const NWRPlayer: React.FC = () => {
                 <a href="https://www.weather.gov/nwr/" target="_blank" rel="noopener noreferrer" className="underline">weather.gov/nwr</a>.
               </div>
             )}
+            {!catalog && (
+              <div className="text-xs text-slate-400 py-2">Finding weather radio streams near {location.label}…</div>
+            )}
+            {catalog && stations.length === 0 && (
+              <div className="text-xs text-amber-300 py-2">
+                No live streams were found. Try again later or visit{' '}
+                <a href="https://noaaweatherradio.org/" target="_blank" rel="noopener noreferrer" className="underline">noaaweatherradio.org</a>.
+              </div>
+            )}
             <div className="flex flex-col gap-1">
               {stations.map((s, i) => (
                 <button
@@ -286,7 +298,7 @@ const NWRPlayer: React.FC = () => {
                     <span className="font-medium truncate">{s.name}</span>
                   </div>
                   <div className="flex items-center gap-2 shrink-0 ml-2 text-[10px]">
-                    <span className="font-mono text-slate-500">{s.freq} MHz</span>
+                    <span className="font-mono text-slate-500">{s.city}</span>
                     <span className="text-indigo-400 font-mono font-bold">{s.callSign}</span>
                   </div>
                 </button>
@@ -309,11 +321,12 @@ const NWRPlayer: React.FC = () => {
               {playState === 'error'   && <span className="shrink-0">⚠</span>}
               {playState === 'paused'  && <span className="shrink-0">⏸</span>}
               <span className="leading-tight">
-                {playState === 'playing' ? `▶ Live · ${station.callSign} — ${station.freq} MHz` :
+                {!station ? 'Looking for nearby streams…' :
+                 playState === 'playing' ? `▶ Live · ${station.callSign} · ${station.name}` :
                  playState === 'loading' ? `Connecting to ${station.callSign}…` :
                  playState === 'paused'  ? 'Paused — click Play to resume' :
                  playState === 'error'   ? (errMsg || 'Stream error — try another station') :
-                 `Ready · ${station.callSign} · ${station.city}`}
+                 `Ready · ${station.callSign} · ${station.name}`}
               </span>
             </div>
 
