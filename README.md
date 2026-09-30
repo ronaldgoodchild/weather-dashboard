@@ -2,6 +2,8 @@
 
 A free, **single-file weather dashboard** built with React, TypeScript, Vite and Tailwind. It pulls live data from public U.S. government sources - forecasts, **severe-weather alerts**, hurricane tracking, tides, radar and NOAA Weather Radio - and can push alerts to your phone with [ntfy](https://ntfy.sh). Built for Northeast Florida; change the ZIP code and the location-based panels follow.
 
+**Live version:** [regteches.com/weather](https://www.regteches.com/weather/) - type any U.S. ZIP code (or open `?zip=90210`).
+
 > Not affiliated with NOAA or the National Weather Service. Always follow official warnings.
 
 ## Screenshots
