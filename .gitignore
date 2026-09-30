@@ -2,5 +2,6 @@ node_modules/
 dist/
 *.zip
 seen-alerts.json
+location.json
 .env
 *.log

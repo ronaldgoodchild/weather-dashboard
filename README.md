@@ -43,10 +43,10 @@ Requires Node.js 20+.
 1. Pick a long, random **ntfy topic** (anyone who knows the topic name can read it - treat it like a password) and subscribe to it in the ntfy app.
 2. Either enter it in the dashboard's notification settings, **or** run the headless monitor:
    ```bash
-   NTFY_TOPIC=your-long-random-topic node monitor/weather-monitor.mjs
+   WX_ZIP=90210 NTFY_TOPIC=your-long-random-topic node monitor/weather-monitor.mjs
    ```
-   Edit `nwsZones` and `locationLabel` at the top of `monitor/weather-monitor.mjs` for your area (zone IDs are shown in the dashboard).
-3. Prefer GitHub Actions? Copy `docs/weather-alerts.workflow.yml.example` into `.github/workflows/` **in your own fork** and add an `NTFY_TOPIC` repository secret. It polls every 5 minutes for free.
+   The monitor watches **the ZIP code you give it** (`WX_ZIP`, or `--zip 90210`): it looks up your NWS alert zones once, caches them, and uses your local time zone in notifications. Try it without sending anything: `node monitor/weather-monitor.mjs --zip 90210 --dry-run`. Add it to cron (see the top of the script) to run every 5 minutes.
+3. Prefer GitHub Actions? Copy `docs/weather-alerts.workflow.yml.example` into `.github/workflows/` **in your own fork**, add an `NTFY_TOPIC` repository secret, and set the ZIP code in the file. It polls every 5 minutes for free.
 
 ## Data sources
 
