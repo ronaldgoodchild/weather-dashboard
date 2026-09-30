@@ -122,6 +122,10 @@ const ZipInput: React.FC = () => {
 const Dashboard: React.FC = () => {
   const { location } = useLocation();
   const [activeTab, setActiveTab] = useState<TabId>('overview');
+
+  useEffect(() => {
+    document.title = `${location.city}, ${location.state} Weather Dashboard | RegTechES`;
+  }, [location.city, location.state]);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [alerts, setAlerts] = useState<NWSAlert[]>([]);
   const [alertsLoading, setAlertsLoading] = useState(true);
@@ -204,7 +208,9 @@ const Dashboard: React.FC = () => {
       // Fetch by all three zone types (forecast + county + fire weather)
       // county zones carry heat advisories; forecast zones carry severe wx
       const res = await fetch(
-        `https://api.weather.gov/alerts/active?zone=${location.nwsZone}`,
+        location.nwsZone
+          ? `https://api.weather.gov/alerts/active?zone=${location.nwsZone}`
+          : `https://api.weather.gov/alerts/active?point=${location.lat.toFixed(4)},${location.lon.toFixed(4)}`,
         { headers: { 'User-Agent': 'WeatherDashboard/1.0' } }
       );
       if (!res.ok) throw new Error(`NWS API ${res.status}`);
@@ -287,7 +293,7 @@ const Dashboard: React.FC = () => {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold tracking-tight">NE Florida Weather</h1>
+                <h1 className="text-xl font-bold tracking-tight">{location.city} Weather</h1>
                 <span className="text-slate-600 text-xl font-light">·</span>
                 <span className="text-xl font-bold tracking-tight text-white">RegTechES</span>
               </div>

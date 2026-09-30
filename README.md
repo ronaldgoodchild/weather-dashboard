@@ -14,13 +14,15 @@ A free, **single-file weather dashboard** built with React, TypeScript, Vite and
 
 ## Features
 
-- **Overview** - current conditions at a glance for your ZIP code
-- **Forecast** - multi-day forecast from the NWS API
-- **Severe** - active NWS alerts and severe-weather outlooks, with radar and lightning maps
-- **Hurricane** - National Hurricane Center products and tropical outlooks
-- **Tides** - NOAA Tides & Currents predictions
-- **Cameras** - traffic and beach camera links (Florida-specific)
-- **NOAA Weather Radio** player
+Type any U.S. ZIP code and **every tab follows it** (or open `?zip=90210` for a shareable link):
+
+- **Overview** - current conditions for your ZIP plus nearby towns, named by the NWS
+- **Forecast** - multi-day forecast from the NWS API for your exact point
+- **Severe** - active NWS alerts for your forecast, county and fire-weather zones, severe-weather outlooks, and lightning; live traffic incidents for Florida ZIPs and a link to your state's 511 site elsewhere
+- **Hurricane** - National Hurricane Center products, the basin closest to you, and your local NWS office's Hurricane Local Statement
+- **Tides** - NOAA Tides & Currents predictions for the three tide stations nearest your ZIP (with a note when the coast is far away)
+- **Cameras** - traffic camera links for your state, beach maps, your nearest NWS radar station and the GOES satellite sector for your region
+- **NOAA Weather Radio** player: reads the live list of relay streams from wxradio.org and offers the ones nearest your ZIP (if a transmitter's main stream is down it tries its backup)
 - **Push notifications** through ntfy.sh for new alerts (browser-side, or run the included monitor script)
 - Builds to **one self-contained `index.html`** you can host anywhere or open from disk
 
@@ -48,7 +50,7 @@ Requires Node.js 20+.
 
 ## Data sources
 
-api.weather.gov (NWS), NOAA Tides & Currents, National Hurricane Center, Storm Prediction Center, radar.weather.gov, NOAA GOES imagery, wxradio.org, Windy embed, Blitzortung, FL511, and api.zippopotam.us for ZIP lookups. Please respect each provider's terms and rate limits; the NWS API asks for a descriptive `User-Agent`.
+api.weather.gov (NWS), NOAA Tides & Currents, National Hurricane Center, Storm Prediction Center, radar.weather.gov, NOAA GOES imagery, wxradio.org, Windy embed, Blitzortung, Florida DOT (DIVAS) and each state's 511 site, and api.zippopotam.us for ZIP lookups. Please respect each provider's terms and rate limits; the NWS API asks for a descriptive `User-Agent`.
 
 ## Contributing
 

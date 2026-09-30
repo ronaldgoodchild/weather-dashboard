@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from '../context/LocationContext';
 
 const Hurricane: React.FC = () => {
+  const { location } = useLocation();
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [activeBasin, setActiveBasin] = useState<'atl' | 'pac'>('atl');
+  // Eastern Pacific for the West Coast and Southwest, Atlantic everywhere else
+  const [activeBasin, setActiveBasin] = useState<'atl' | 'pac'>(location.lon < -105 ? 'pac' : 'atl');
+  const office = (location.office || '').toUpperCase();
 
   useEffect(() => {
     setLastUpdated(new Date());
@@ -12,6 +16,20 @@ const Hurricane: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {office && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div className="text-sm font-semibold">🏠 Local guidance for {location.label}</div>
+            <div className="text-xs text-slate-400">Your National Weather Service office is {office}. Its Hurricane Local Statement is issued when a tropical system threatens the area.</div>
+          </div>
+          <div className="flex gap-2 text-xs">
+            <a href={`https://forecast.weather.gov/product.php?site=${office}&issuedby=${office}&product=HLS`} target="_blank" rel="noopener noreferrer"
+              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-blue-300">Hurricane Local Statement ↗</a>
+            <a href={`https://www.weather.gov/${office.toLowerCase()}/`} target="_blank" rel="noopener noreferrer"
+              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-blue-300">NWS {office} ↗</a>
+          </div>
+        </div>
+      )}
       {/* Basin tabs + header */}
       <div className="flex items-center gap-3 flex-wrap">
         {(['atl', 'pac'] as const).map(basin => (

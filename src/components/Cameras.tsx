@@ -1,13 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from '../context/LocationContext';
+import { goesSectorFor, state511 } from '../utils/geo';
 
 type CamView = 'traffic' | 'beach' | 'radar';
 
-const TRAFFIC_LINKS = [
-  { name: 'FL 511', icon: '🚦', desc: 'FDOT live traffic cameras & incidents', href: 'https://fl511.com/', color: 'border-green-700 hover:border-green-500' },
-  { name: 'NaviGator FDOT', icon: '🛣️', desc: 'Advanced traffic management cameras', href: 'https://www.navigator.state.fl.us/', color: 'border-orange-700 hover:border-orange-500' },
-  { name: 'Waze Live Map', icon: '🚗', desc: 'Real-time traffic, accidents & hazards', href: 'https://www.waze.com/live-map/', color: 'border-cyan-700 hover:border-cyan-500' },
-];
+function trafficLinks(state: string) {
+  const dot = state511(state);
+  const links = [
+    { name: dot.name, icon: '🚦', desc: `${state || 'State'} DOT live traffic cameras & incidents`, href: dot.url, color: 'border-green-700 hover:border-green-500' },
+  ];
+  if (state === 'FL') {
+    links.push({ name: 'NaviGator FDOT', icon: '🛣️', desc: 'Advanced traffic management cameras', href: 'https://www.navigator.state.fl.us/', color: 'border-orange-700 hover:border-orange-500' });
+  }
+  links.push({ name: 'Waze Live Map', icon: '🚗', desc: 'Real-time traffic, accidents & hazards', href: 'https://www.waze.com/live-map/', color: 'border-cyan-700 hover:border-cyan-500' });
+  return links;
+}
 
 const BingMap: React.FC<{ lat: number; lon: number; label: string; zoom?: number }> = ({ lat, lon, label, zoom = 13 }) => (
   <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
@@ -63,7 +70,7 @@ const OSMMap: React.FC<{ lat: number; lon: number; label: string }> = ({ lat, lo
   );
 };
 
-const RadarLoop: React.FC = () => {
+const RadarLoop: React.FC<{ station: string }> = ({ station }) => {
   const [key, setKey] = useState(Date.now());
   useEffect(() => {
     const id = setInterval(() => setKey(Date.now()), 2 * 60 * 1000);
@@ -71,12 +78,12 @@ const RadarLoop: React.FC = () => {
   }, []);
   return (
     <img key={key}
-      src={`https://radar.weather.gov/ridge/standard/KJAX_loop.gif?${key}`}
-      alt="NWS KJAX Radar" className="w-full rounded-xl" />
+      src={`https://radar.weather.gov/ridge/standard/${station}_loop.gif?${key}`}
+      alt={`NWS ${station} Radar`} className="w-full rounded-xl" />
   );
 };
 
-const SatImg: React.FC = () => {
+const SatImg: React.FC<{ sat: string; code: string; label: string }> = ({ sat, code, label }) => {
   const [key, setKey] = useState(Date.now());
   useEffect(() => {
     const id = setInterval(() => setKey(Date.now()), 10 * 60 * 1000);
@@ -84,19 +91,22 @@ const SatImg: React.FC = () => {
   }, []);
   return (
     <img key={key}
-      src={`https://cdn.star.nesdis.noaa.gov/GOES16/ABI/SECTOR/se/GEOCOLOR/latest.jpg?${key}`}
-      alt="GOES-16 SE Satellite" className="w-full rounded-xl" />
+      src={`https://cdn.star.nesdis.noaa.gov/${sat}/ABI/SECTOR/${code}/GEOCOLOR/latest.jpg?${key}`}
+      alt={`${sat} ${label} satellite`} className="w-full rounded-xl" />
   );
 };
 
 const Cameras: React.FC = () => {
   const { location } = useLocation();
   const [view, setView] = useState<CamView>('traffic');
+  const radar = location.radarStation || 'KJAX';
+  const sector = goesSectorFor(location.lat, location.lon);
+  const sat = sector.sat === 'GOES19' ? 'GOES-19' : 'GOES-18';
 
   // Nearby beach coords offset from user location
   const beaches = [
     { label: `${location.city} Area`, lat: location.lat, lon: location.lon },
-    { label: 'NE Area', lat: location.lat + 0.4, lon: location.lon + 0.3 },
+    { label: 'North-East Area', lat: location.lat + 0.4, lon: location.lon + 0.3 },
     { label: 'South Area', lat: location.lat - 0.4, lon: location.lon + 0.2 },
     { label: 'Coastal Area', lat: location.lat - 0.2, lon: location.lon + 0.5 },
   ];
@@ -131,13 +141,13 @@ const Cameras: React.FC = () => {
           <div className="grid md:grid-cols-2 gap-4">
             <BingMap lat={location.lat}          lon={location.lon}          label={`${location.city} — Local Area`}   zoom={12} />
             <BingMap lat={location.lat}          lon={location.lon}          label={`${location.city} — Highway View`}  zoom={10} />
-            <BingMap lat={location.lat + 0.35}   lon={location.lon}          label="North — I-95 Corridor"              zoom={11} />
-            <BingMap lat={location.lat - 0.35}   lon={location.lon}          label="South — Coastal Route"              zoom={11} />
+            <BingMap lat={location.lat + 0.35}   lon={location.lon}          label="North of town"              zoom={11} />
+            <BingMap lat={location.lat - 0.35}   lon={location.lon}          label="South of town"              zoom={11} />
           </div>
           <div>
             <h3 className="font-semibold mb-3 text-sm text-slate-300">📷 Live Camera Sites</h3>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {TRAFFIC_LINKS.map(link => (
+              {trafficLinks(location.state).map(link => (
                 <a key={link.name} href={link.href} target="_blank" rel="noopener noreferrer"
                   className={`bg-slate-900 border ${link.color} rounded-xl p-4 transition-all group`}>
                   <div className="text-2xl mb-2">{link.icon}</div>
@@ -172,24 +182,24 @@ const Cameras: React.FC = () => {
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
             <div className="px-5 py-3 border-b border-slate-800 flex items-center justify-between">
               <div>
-                <span className="font-medium text-sm">📡 NWS Jacksonville Radar (KJAX)</span>
+                <span className="font-medium text-sm">📡 NWS Radar — {radar} ({location.office || 'local office'})</span>
                 <span className="ml-2 text-[10px] text-slate-500">Refreshes every 2 min</span>
               </div>
-              <a href="https://radar.weather.gov/station/KJAX/standard" target="_blank" rel="noopener noreferrer"
+              <a href={`https://radar.weather.gov/station/${radar}/standard`} target="_blank" rel="noopener noreferrer"
                 className="text-xs text-blue-400 hover:underline">Full radar ↗</a>
             </div>
-            <div className="p-3"><RadarLoop /></div>
+            <div className="p-3"><RadarLoop station={radar} /></div>
           </div>
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
             <div className="px-5 py-3 border-b border-slate-800 flex items-center justify-between">
               <div>
-                <span className="font-medium text-sm">🛰️ GOES-16 Satellite — SE United States</span>
+                <span className="font-medium text-sm">🛰️ {sat} Satellite — {sector.label}</span>
                 <span className="ml-2 text-[10px] text-slate-500">Refreshes every 10 min</span>
               </div>
-              <a href="https://www.star.nesdis.noaa.gov/GOES/sector_band.php?sat=G16&sector=se&band=GEOCOLOR&length=12"
+              <a href={sector.page}
                 target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:underline">Full loop ↗</a>
             </div>
-            <div className="p-3"><SatImg /></div>
+            <div className="p-3"><SatImg sat={sector.sat} code={sector.code} label={sector.label} /></div>
           </div>
           {/* Windy full radar for user's location */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">

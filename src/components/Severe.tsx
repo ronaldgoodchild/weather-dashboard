@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useLocation } from '../context/LocationContext';
+import { state511 } from '../utils/geo';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -65,6 +66,9 @@ function spcImageUrl(day: SpcDay, view: SpcView, bust: number): string {
 
 const Severe: React.FC = () => {
   const { location } = useLocation();
+  // The live incident feed below is Florida DOT's; other states link to their own 511 site.
+  const isFL = location.state === 'FL';
+  const dot = state511(location.state);
 
   // ── Traffic state ──────────────────────────────────────────────────────────
   const [events,        setEvents]       = useState<TrafficEvent[]>([]);
@@ -85,6 +89,10 @@ const Severe: React.FC = () => {
 
   // ── Fetch traffic events from FDOT DIVAS API ───────────────────────────────
   const fetchTraffic = useCallback(async () => {
+    if (!isFL) {
+      setEvents([]); setTrafficError(null); setTrafficLoad(false);
+      return;
+    }
     setTrafficLoad(true);
     setTrafficError(null);
     try {
@@ -148,7 +156,7 @@ const Severe: React.FC = () => {
     } finally {
       setTrafficLoad(false);
     }
-  }, [location.lat, location.lon]);
+  }, [location.lat, location.lon, isFL]);
 
   useEffect(() => {
     fetchTraffic();
@@ -294,6 +302,8 @@ const Severe: React.FC = () => {
         </div>
       </div>
 
+      {isFL ? (
+      <>
       {/* ── FL511 Traffic Incidents ─────────────────────────────────────────── */}
       <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between flex-wrap gap-3">
@@ -410,6 +420,21 @@ const Severe: React.FC = () => {
           </a>
         </div>
       </div>
+
+      </>
+      ) : (
+      <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6">
+        <h2 className="font-semibold text-lg flex items-center gap-2"><span>🚗</span> Traffic &amp; Road Conditions</h2>
+        <p className="text-sm text-slate-400 mt-2">
+          Live incident data here comes from Florida DOT, so it is shown for Florida ZIP codes. For{' '}
+          <strong className="text-slate-200">{location.label}</strong>, use your state's official traffic site:
+        </p>
+        <a href={dot.url} target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 mt-4 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium">
+          🚦 {dot.name} — live cameras &amp; incidents ↗
+        </a>
+      </div>
+      )}
 
     </div>
   );

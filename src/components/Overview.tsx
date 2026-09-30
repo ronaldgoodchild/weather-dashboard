@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation } from '../context/LocationContext';
+import { fetchNwsPoint } from '../utils/geo';
 
 interface MapLayer { id: string; label: string; windyLayer: string; }
 
@@ -73,15 +74,49 @@ async function fetchConditions(lat: number, lon: number) {
   };
 }
 
-// Named nearby points — give them real city names relative to Jacksonville
-// but offsets small enough to stay within the general region
-const NEARBY = [
-  { name: 'Fernandina Beach', dLat:  0.47, dLon:  0.14 },
-  { name: 'St. Augustine',    dLat: -0.43, dLon:  0.07 },
-  { name: 'Orange Park',      dLat: -0.08, dLon: -0.18 },
-  { name: 'Green Cove Spgs',  dLat: -0.25, dLon: -0.10 },
-  { name: 'Palm Valley',      dLat:  0.10, dLon:  0.28 },
+// Sample points on a ring ~20-25 miles around the ZIP. Each one is named by asking the
+// National Weather Service which town it is nearest to, so this works for any ZIP.
+const RING = [
+  { dLat:  0.32, dLon:  0.00 }, { dLat: -0.32, dLon:  0.00 },
+  { dLat:  0.00, dLon:  0.36 }, { dLat:  0.00, dLon: -0.36 },
+  { dLat:  0.24, dLon:  0.27 }, { dLat: -0.24, dLon: -0.27 },
+  { dLat:  0.24, dLon: -0.27 }, { dLat: -0.24, dLon:  0.27 },
 ];
+
+async function nearbyPlaces(lat: number, lon: number, homeCity: string) {
+  const cos = Math.max(0.2, Math.cos((lat * Math.PI) / 180));
+  const found = await Promise.all(
+    RING.map(async o => {
+      const la = lat + o.dLat;
+      const lo = lon + o.dLon / cos;
+      const pt = await fetchNwsPoint(la, lo);
+      return pt && pt.city ? { name: pt.city, lat: la, lon: lo } : null;
+    })
+  );
+  const seen = new Set<string>([homeCity.toLowerCase()]);
+  const out: { name: string; lat: number; lon: number }[] = [];
+  for (const f of found) {
+    if (!f || seen.has(f.name.toLowerCase())) continue;
+    seen.add(f.name.toLowerCase());
+    out.push(f);
+    if (out.length === 5) break;
+  }
+  return out;
+}
+
+// One transient failure (rate limit, network blip) shouldn't blank a reading: retry twice.
+async function fetchConditionsRetry(lat: number, lon: number) {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await fetchConditions(lat, lon);
+    } catch (e) {
+      lastErr = e;
+      await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+}
 
 const REFRESH_SECS = 15 * 60; // 15 min
 
@@ -96,17 +131,14 @@ const Overview: React.FC = () => {
 
   const fetchAllStations = useCallback(async () => {
     setLoading(true);
+    const near = await nearbyPlaces(location.lat, location.lon, location.city);
     const points = [
       { name: location.city, lat: location.lat, lon: location.lon },
-      ...NEARBY.map(o => ({
-        name: o.name,
-        lat: location.lat + o.dLat,
-        lon: location.lon + o.dLon,
-      })),
+      ...near,
     ];
 
     const results = await Promise.allSettled(
-      points.map(p => fetchConditions(p.lat, p.lon))
+      points.map(p => fetchConditionsRetry(p.lat, p.lon))
     );
 
     setStations(

@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from '../context/LocationContext';
+import { distanceMiles } from '../utils/geo';
 
 interface TidePrediction {
   t: string; // "2024-09-01 06:24"
@@ -15,13 +17,25 @@ interface Station {
   id: string;
   name: string;
   state: string;
+  miles: number;
 }
 
-const STATIONS: Station[] = [
-  { id: '8720218', name: 'Jacksonville', state: 'FL' },
-  { id: '8720576', name: 'St. Augustine', state: 'FL' },
-  { id: '8720030', name: 'Fernandina Beach', state: 'FL' },
-];
+// NOAA publishes the full list of tide-prediction stations. Fetch it once and pick the
+// closest ones to whatever ZIP the visitor entered.
+let stationCache: { id: string; name: string; state: string; lat: number; lng: number }[] | null = null;
+
+async function nearestStations(lat: number, lon: number, count = 3): Promise<Station[]> {
+  if (!stationCache) {
+    const res = await fetch('https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json?type=tidepredictions');
+    if (!res.ok) throw new Error(`NOAA station list ${res.status}`);
+    const data = await res.json();
+    stationCache = (data.stations ?? []).filter((st: any) => typeof st.lat === 'number' && typeof st.lng === 'number');
+  }
+  return stationCache!
+    .map(st => ({ id: st.id, name: st.name, state: st.state ?? '', miles: distanceMiles(lat, lon, st.lat, st.lng) }))
+    .sort((a, b) => a.miles - b.miles)
+    .slice(0, count);
+}
 
 function formatTideTime(t: string): string {
   const d = new Date(t.replace(' ', 'T') + ':00');
@@ -45,12 +59,32 @@ function nextTideLabel(predictions: TidePrediction[]): string {
 }
 
 const Tides: React.FC = () => {
-  const [selectedStation, setSelectedStation] = useState<Station>(STATIONS[0]);
+  const { location } = useLocation();
+  const [stations, setStations] = useState<Station[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [stationError, setStationError] = useState<string | null>(null);
+  const selectedStation: Station | undefined = stations.find(s => s.id === selectedId) ?? stations[0];
   const [predictions, setPredictions] = useState<TidePrediction[]>([]);
   const [waterLevel, setWaterLevel] = useState<WaterLevel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  // Find the tide stations nearest the chosen ZIP
+  useEffect(() => {
+    let cancelled = false;
+    setStationError(null);
+    setLoading(true);
+    nearestStations(location.lat, location.lon)
+      .then(list => {
+        if (cancelled) return;
+        setStations(list);
+        setSelectedId(list[0]?.id ?? null);
+        if (!list.length) { setStationError('No NOAA tide stations found.'); setLoading(false); }
+      })
+      .catch(e => { if (!cancelled) { setStationError(e.message ?? 'Could not load NOAA tide stations'); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [location.lat, location.lon]);
 
   const fetchTides = async (station: Station) => {
     setLoading(true);
@@ -60,7 +94,7 @@ const Tides: React.FC = () => {
       const today = fmt(new Date());
       const tomorrow = fmt(new Date(Date.now() + 86400000));
       const base = 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter';
-      const common = `&station=${station.id}&datum=MLLW&time_zone=lst_ldt&units=english&application=NEFloridaWeatherDash&format=json`;
+      const common = `&station=${station.id}&datum=MLLW&time_zone=lst_ldt&units=english&application=RegTechesWeatherDash&format=json`;
 
       const [predRes, wlRes] = await Promise.all([
         fetch(`${base}?begin_date=${today}&end_date=${tomorrow}&product=predictions&interval=hilo${common}`),
@@ -86,10 +120,11 @@ const Tides: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!selectedStation) return;
     fetchTides(selectedStation);
     const id = setInterval(() => fetchTides(selectedStation), 30 * 60 * 1000);
     return () => clearInterval(id);
-  }, [selectedStation]); // eslint-disable-line
+  }, [selectedStation?.id]); // eslint-disable-line
 
   // Split predictions into today/tomorrow
   const todayStr = new Date().toISOString().split('T')[0];
@@ -101,21 +136,36 @@ const Tides: React.FC = () => {
   const currentWL = waterLevel.length > 0 ? waterLevel[waterLevel.length - 1] : null;
   const maxHeight = Math.max(...predictions.map(p => parseFloat(p.v)), 4);
 
+  if (!selectedStation) {
+    return (
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 text-sm text-slate-400">
+        {stationError ? <span className="text-red-400">⚠️ {stationError}</span> : <>Finding NOAA tide stations near {location.label}…</>}
+      </div>
+    );
+  }
+  const nearestMiles = stations[0]?.miles ?? 0;
+
   return (
     <div className="space-y-6">
+      {nearestMiles > 75 && (
+        <div className="bg-amber-950/30 border border-amber-800/60 rounded-xl p-3 text-xs text-amber-300">
+          The closest NOAA tide station to {location.label} is about {Math.round(nearestMiles)} miles away, so these
+          readings describe the nearest coast or tidal water rather than your exact spot.
+        </div>
+      )}
       {/* Station selector */}
       <div className="flex items-center gap-3 flex-wrap">
-        {STATIONS.map(s => (
+        {stations.map(s => (
           <button
             key={s.id}
-            onClick={() => setSelectedStation(s)}
+            onClick={() => setSelectedId(s.id)}
             className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
               selectedStation.id === s.id
                 ? 'bg-blue-600 text-white'
                 : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
             }`}
           >
-            🌊 {s.name}, {s.state}
+            🌊 {s.name}{s.state ? `, ${s.state}` : ''} <span className="opacity-60 text-xs">· {Math.round(s.miles)} mi</span>
           </button>
         ))}
         <div className="ml-auto flex items-center gap-3 text-xs text-slate-500">
