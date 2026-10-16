@@ -1,6 +1,7 @@
 # Changelog
 
 ## [Unreleased]
+- Dependencies: React 19.3.1, Vite 8 with @vitejs/plugin-react 6, Tailwind 4.3.3 and vite-plugin-singlefile 2.3.3, updated together (the separate Dependabot bumps conflicted on peer versions). Typecheck and build pass; app checked in a browser.
 - **The alert monitor follows a ZIP code too**: `WX_ZIP=90210 node monitor/weather-monitor.mjs` (or `--zip`) looks up and caches your NWS zones and time zone instead of the hardcoded Jacksonville ones; added `--dry-run`. The GitHub Actions example takes a ZIP as well. Old `NWS_ZONES`/`LOCATION` settings still work.
 - **Every tab now follows the ZIP code**: nearby towns (named by the NWS), nearest NOAA tide stations, the ZIP's own NWS radar station and GOES satellite sector, state 511 traffic links (live incidents stay Florida-only), Weather Radio relays sorted by distance, hurricane basin and local NWS office, and a page title/header that use the city. `?zip=` links open a chosen location.
 - **Weather Radio fix**: only 5 of the 26 station addresses in the old list actually streamed (the rest returned 404 and showed "no supported source was found"). The player now reads wxradio.org's live stream list and ranks the real streams by distance (coordinates in `src/data/nwrCoords.json`), falling back to the five verified streams if the list can't be fetched.
